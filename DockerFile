@@ -1,0 +1,16 @@
+FROM python:3.9.17-slim-bullseye
+
+WORKDIR /app
+
+RUN apt-get update -y && \
+    apt-get install -y python3-opencv
+
+COPY requirements.txt /app/requirements.txt
+
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+RUN pip3 install gunicorn
+
+COPY . /app
+
+CMD gunicorn --workers 8 --bind 0.0.0.0:5000 wsgi:app --timeout 5 --keep-alive 5 --log-level info
