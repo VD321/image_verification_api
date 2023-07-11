@@ -30,6 +30,16 @@ import os
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
+def flatten_list(lst):
+    flattened = []
+    for item in lst:
+        if isinstance(item, list) or isinstance(item, np.ndarray):
+            flattened.extend(flatten_list(item))
+        else:
+            flattened.append(item)
+    return flattened
+
+
 class VerificationResult:
 
     def __init__(self, faceType, score, predictionCost):
@@ -44,36 +54,8 @@ def check_image(image):
         return False
     else:
         return True
-
-def test(image, model_dir, device_id):
-    model_test = AntiSpoofPredict(device_id)
-    image_cropper = CropImage()
-    image_org = image
-    image = cv2.resize(image , (int(image.shape[0] * 3/4) , image.shape[0]))
-    result = check_image(image)
-    if result is False:
-        return
-    image_bbox = model_test.get_bbox(image)
-    prediction = np.zeros((1, 3))
-    test_speed = 0
-    # sum the prediction from single model's result
-    for model_name in os.listdir(model_dir):
-        h_input, w_input, model_type, scale = parse_model_name(model_name)
-        param = {
-            "org_img": image,
-            "bbox": image_bbox,
-            "scale": scale,
-            "out_w": w_input,
-            "out_h": h_input,
-            "crop": True,
-        }
-        if scale is None:
-            param["crop"] = False
-        img = image_cropper.crop(**param)
-        start = time.time()
-        prediction += model_test.predict(img, os.path.join(model_dir, model_name))
-        test_speed += time.time()-start
-
+    
+def check_image_quality(image, image_org):
     def normalize_kernel(kernel):
         return kernel / np.sum(kernel)
 
@@ -182,7 +164,7 @@ def test(image, model_dir, device_id):
         coefficients = calculate_pair_product_coefficients(mscn_coefficients)
     
         features = [calculate_features(name, coeff) for name, coeff in coefficients.items()]
-        flatten_features = list(chain.from_iterable(features))
+        flatten_features = flatten_list(features)
         return np.array(flatten_features)
     
     gray_image = skimage.color.rgb2gray(image_org)
@@ -219,9 +201,48 @@ def test(image, model_dir, device_id):
 
     image_score =  calculate_image_quality_score(brisque_features)
 
+    return image_score
+
+
+def test(image, model_dir, device_id):
+    model_test = AntiSpoofPredict(device_id)
+    image_cropper = CropImage()
+    image_org = image
+    image = cv2.resize(image , (int(image.shape[0] * 3/4) , image.shape[0]))
+    result = check_image(image)
+    if result is False:
+        return
+    
+    quality_result = check_image_quality(image, image_org)
+
+    print("Image quality Score: " + str(quality_result))
+    if quality_result >= 40:
+        return VerificationResult("UNKNOWN", 0, 0)
+    
+    image_bbox = model_test.get_bbox(image)
+    prediction = np.zeros((1, 3))
+    test_speed = 0
+    # sum the prediction from single model's result
+    for model_name in os.listdir(model_dir):
+        h_input, w_input, model_type, scale = parse_model_name(model_name)
+        param = {
+            "org_img": image,
+            "bbox": image_bbox,
+            "scale": scale,
+            "out_w": w_input,
+            "out_h": h_input,
+            "crop": True,
+        }
+        if scale is None:
+            param["crop"] = False
+        img = image_cropper.crop(**param)
+        start = time.time()
+        prediction += model_test.predict(img, os.path.join(model_dir, model_name))
+        test_speed += time.time()-start
+
     label = np.argmax(prediction)
     value = prediction[0][label]/2
-    if label == 1 and image_score <= 40:
+    if label == 1:
         print("The Image is Real Face. Score: {:.2f}.".format(value))
         return VerificationResult("REAL_FACE", value, test_speed)
     else:
