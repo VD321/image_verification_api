@@ -211,7 +211,7 @@ def test(image, model_dir, device_id):
     image = cv2.resize(image , (int(image.shape[0] * 3/4) , image.shape[0]))
     result = check_image(image)
     if result is False:
-        return
+        return VerificationResult("UNKNOWN", 0, 0)
     
     quality_result = check_image_quality(image, image_org)
 
