@@ -5,7 +5,7 @@ import argparse
 import warnings
 import time
 
-from src.anti_spoof_predict import AntiSpoofPredict
+from src.anti_spoof_predict import get_bbox, predict
 from src.generate_patches import CropImage
 from src.utility import parse_model_name
 warnings.filterwarnings('ignore')
@@ -204,22 +204,20 @@ def check_image_quality(image, image_org):
     return image_score
 
 
-def test(image, model_dir, device_id):
-    model_test = AntiSpoofPredict(device_id)
+def test(image, model_dir, models):
     image_cropper = CropImage()
     image_org = image
     image = cv2.resize(image , (int(image.shape[0] * 3/4) , image.shape[0]))
     result = check_image(image)
     if result is False:
         return VerificationResult("UNKNOWN", 0, 0)
-    
     quality_result = check_image_quality(image, image_org)
 
     print("Image quality Score: " + str(quality_result))
     if quality_result >= 40:
         return VerificationResult("UNKNOWN", 0, 0)
     
-    image_bbox = model_test.get_bbox(image)
+    image_bbox = get_bbox(image, models)
     prediction = np.zeros((1, 3))
     test_speed = 0
     # sum the prediction from single model's result
@@ -237,7 +235,7 @@ def test(image, model_dir, device_id):
             param["crop"] = False
         img = image_cropper.crop(**param)
         start = time.time()
-        prediction += model_test.predict(img, os.path.join(model_dir, model_name))
+        prediction += predict(img, os.path.join(model_dir, model_name), models)
         test_speed += time.time()-start
 
     label = np.argmax(prediction)
